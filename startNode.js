@@ -65,53 +65,83 @@ function isNodeUpdated(walletAddress) {
     return logs.some(log => log.wallet === walletAddress && log.success && log.timestamp.startsWith(today));
 }
 
-async function startNodeDaily() {
-    const now = new Date();
-    let targetTime = new Date(now.setHours(7, 0, 0, 0));
-    targetTime.setMinutes(targetTime.getMinutes() + getRandomDelay());
+async function processWallets() {
+    let hasUpdated = false; 
 
-    const delay = targetTime - Date.now();
-    console.log(colors.cyan(`Chờ đến ${targetTime.toLocaleTimeString()} để bắt đầu...`));
-
-    setTimeout(async () => {
-        for (const walletAddress of wallets) {
-            if (isNodeUpdated(walletAddress)) {
-                console.log(colors.yellow(`Node cho ví ${walletAddress} đã được cập nhật hôm nay, bỏ qua.`));
-                continue;
-            }
-
-            const proxy = proxies[Math.floor(Math.random() * proxies.length)];
-            const result = await startNode(walletAddress, proxy);
-            if (result?.success) {
-                console.log(colors.green(`✔️ Cập nhật startTime cho ví ${walletAddress} thành công!`));
-
-                logs.push({
-                    wallet: walletAddress,
-                    success: true,
-                    timestamp: new Date().toISOString()
-                });
-
-                fs.writeFileSync('log.json', JSON.stringify(logs, null, 2));
-            } else {
-                console.log(colors.red(`❌ Cập nhật startTime cho ví ${walletAddress} thất bại.`));
-
-                logs.push({
-                    wallet: walletAddress,
-                    success: false,
-                    timestamp: new Date().toISOString()
-                });
-
-                fs.writeFileSync('log.json', JSON.stringify(logs, null, 2));
-            }
-
-            await new Promise(resolve => setTimeout(resolve, 10000));
+    for (const walletAddress of wallets) {
+        if (isNodeUpdated(walletAddress)) {
+            console.log(colors.yellow(`Node cho ví ${walletAddress} đã được cập nhật hôm nay, bỏ qua.`));
+            continue;
         }
 
-        startNodeDaily();
+        const proxy = proxies[Math.floor(Math.random() * proxies.length)];
+        const result = await startNode(walletAddress, proxy);
+        if (result?.success) {
+            console.log(colors.green(`✔️ Cập nhật startTime cho ví ${walletAddress} thành công!`));
+
+            logs.push({
+                wallet: walletAddress,
+                success: true,
+                timestamp: new Date().toISOString()
+            });
+
+            fs.writeFileSync('log.json', JSON.stringify(logs, null, 2));
+            hasUpdated = true;
+        } else {
+            console.log(colors.red(`❌ Cập nhật startTime cho ví ${walletAddress} thất bại.`));
+
+            logs.push({
+                wallet: walletAddress,
+                success: false,
+                timestamp: new Date().toISOString()
+            });
+
+            fs.writeFileSync('log.json', JSON.stringify(logs, null, 2));
+            hasUpdated = true;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 10000));
+    }
+
+    return hasUpdated; 
+}
+
+async function startNodeDaily() {
+    const now = new Date();
+    let targetTime = new Date(now.setHours(7, 0, 0, 0)); 
+    if (now.getHours() >= 7) {
+        targetTime.setDate(targetTime.getDate() + 1);
+    }
+
+    const delay = targetTime - Date.now();
+    console.log(colors.cyan(`Chờ đến ${targetTime.toLocaleTimeString()} để bắt đầu lại...`));
+
+    setTimeout(async () => {
+        const hasUpdated = await processWallets();
+
+        if (hasUpdated) {
+            const extraDelay = getRandomDelay() * 60 * 1000;
+            console.log(colors.cyan(`Đợi thêm ${extraDelay / 60000} phút trước khi bắt đầu lại...`));
+
+            setTimeout(startNodeDaily, extraDelay);
+            startNodeDaily();
+        }
     }, delay);
 }
+
 function getRandomDelay() {
     return Math.floor(Math.random() * (10 - 2 + 1)) + 2;
 }
 
-startNodeDaily();
+async function runOnce() {
+    const hasUpdated = await processWallets();
+
+    if (hasUpdated) {
+        await startNodeDaily();
+    } else {
+        console.log(colors.cyan("Không có ví nào cần xử lý. Đợi đến 7h sáng hôm sau..."));
+        await startNodeDaily();
+    }
+}
+
+runOnce();
