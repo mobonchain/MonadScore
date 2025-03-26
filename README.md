@@ -42,7 +42,7 @@
 1. Nhấn vào nút **<> Code"** màu xanh lá cây, sau đó chọn **Download ZIP**.
 2. Giải nén file ZIP vào thư mục mà bạn muốn lưu trữ.
 
-### Bước 2: Cấu Hình Proxy, Wallet và Token
+### Bước 2: Cấu Hình Proxy, Wallet
 
 1. Mở file `proxy.txt` và nhâp vào danh sách `Proxy` theo cấu trúc dữ liệu phía trên
 2. Mở file `wallet.txt` và nhập vào `Địa chỉ ví` của các ví EVM bạn muốn sử dụng
