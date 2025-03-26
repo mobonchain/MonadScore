@@ -26,7 +26,7 @@
      ```
 
 2. **wallet.txt**:
-   - Mỗi dòng chứa một private key của ví Ethereum (không cần kèm địa chỉ ví).
+   - Mỗi dòng chứa một địa chỉ ví EVM
    - Định dạng:
      ```
      0xYourWalletAddress1
