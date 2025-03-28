@@ -36,6 +36,16 @@ if (fs.existsSync('log.json')) {
     logs = JSON.parse(fs.readFileSync('log.json', 'utf-8'));
 }
 
+function getHeaders() {
+    return {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+        'Accept': 'application/json, text/plain, */*',
+        'Content-Type': 'application/json',
+        'origin': 'https://monadscore.xyz',
+        'referer': 'https://monadscore.xyz/'
+    };
+}
+
 async function startNode(walletAddress, proxy) {
     const data = {
         wallet: walletAddress,
@@ -49,7 +59,8 @@ async function startNode(walletAddress, proxy) {
             data,
             httpAgent: proxy,
             httpsAgent: proxy,
-            timeout: 15000
+            timeout: 15000,
+            headers: getHeaders()
         };
 
         const res = await axios(config);
@@ -61,12 +72,12 @@ async function startNode(walletAddress, proxy) {
 }
 
 function isNodeUpdated(walletAddress) {
-    const today = new Date().toISOString().slice(0, 10); 
+    const today = new Date().toISOString().slice(0, 10);
     return logs.some(log => log.wallet === walletAddress && log.success && log.timestamp.startsWith(today));
 }
 
 async function processWallets() {
-    let hasUpdated = false; 
+    let hasUpdated = false;
 
     for (const walletAddress of wallets) {
         if (isNodeUpdated(walletAddress)) {
@@ -103,13 +114,14 @@ async function processWallets() {
         await new Promise(resolve => setTimeout(resolve, 10000));
     }
 
-    return hasUpdated; 
+    return hasUpdated;
 }
 
 async function startNodeDaily() {
     const now = new Date();
-    let targetTime = new Date(now.setHours(7, 0, 0, 0)); 
-    if (now.getHours() >= 7) {
+    const targetTime = new Date(now.setHours(7, 2, 0, 0));
+
+    if (now.getTime() >= targetTime.getTime()) {
         targetTime.setDate(targetTime.getDate() + 1);
     }
 
@@ -124,6 +136,7 @@ async function startNodeDaily() {
             console.log(colors.cyan(`Đợi thêm ${extraDelay / 60000} phút trước khi bắt đầu lại...`));
 
             setTimeout(startNodeDaily, extraDelay);
+        } else {
             startNodeDaily();
         }
     }, delay);
@@ -139,7 +152,7 @@ async function runOnce() {
     if (hasUpdated) {
         await startNodeDaily();
     } else {
-        console.log(colors.cyan("Không có ví nào cần xử lý. Đợi đến 7h sáng hôm sau..."));
+        console.log(colors.cyan("Không có ví nào cần xử lý. Đợi đến 7h02 sáng hôm sau..."));
         await startNodeDaily();
     }
 }
