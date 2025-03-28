@@ -12,20 +12,18 @@ const BASE_URL = 'https://mscore.onrender.com';
 
 let proxies = [];
 if (fs.existsSync('proxy.txt')) {
-    const proxyLines = fs.readFileSync('proxy.txt', 'utf-8')
+    proxies = fs.readFileSync('proxy.txt', 'utf-8')
         .split('\n')
         .map(line => line.trim())
-        .filter(line => line.length > 0);
-
-    proxies = proxyLines.map(proxy => {
-        try {
-            const agent = new HttpsProxyAgent(proxy);
-            return agent;
-        } catch (e) {
-            console.log(colors.red(`Lỗi khi phân tích proxy: ${proxy} - ${e.message}`));
-            return null;
-        }
-    }).filter(proxy => proxy !== null);
+        .filter(line => line.length > 0)
+        .map(proxy => {
+            try {
+                return new HttpsProxyAgent(proxy);
+            } catch (e) {
+                console.log(colors.red(`Lỗi khi phân tích proxy: ${proxy} - ${e.message}`));
+                return null;
+            }
+        }).filter(proxy => proxy !== null);
 }
 
 let wallets = [];
@@ -36,11 +34,18 @@ if (fs.existsSync('wallet.txt')) {
         .filter(line => line.length > 0);
 }
 
-async function registerWallet(walletAddress, referralCode, proxy) {
-    const data = {
-        wallet: walletAddress,
-        invite: referralCode
+function getHeaders() {
+    return {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36', // Chỉ sử dụng 1 User-Agent
+        'Accept': 'application/json, text/plain, */*',
+        'Content-Type': 'application/json',
+        'origin': 'https://monadscore.xyz',
+        'referer': 'https://monadscore.xyz/'
     };
+}
+
+async function registerWallet(walletAddress, referralCode, proxy) {
+    const data = { wallet: walletAddress, invite: referralCode };
 
     try {
         const config = {
@@ -49,7 +54,8 @@ async function registerWallet(walletAddress, referralCode, proxy) {
             data,
             httpAgent: proxy,
             httpsAgent: proxy,
-            timeout: 15000
+            timeout: 15000,
+            headers: getHeaders()
         };
 
         const res = await axios(config);
