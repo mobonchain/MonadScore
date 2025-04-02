@@ -2,159 +2,189 @@ const fs = require('fs');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const colors = require('colors');
+const { ethers, Wallet } = require('ethers');
 
 const BASE_URL = 'https://mscore.onrender.com';
 
-let wallets = [];
-if (fs.existsSync('wallet.txt')) {
-    wallets = fs.readFileSync('wallet.txt', 'utf-8')
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
+async function readAccounts() {
+  const accounts = [];
+  try {
+    const data = await fs.promises.readFile('wallet.txt', 'utf-8');
+    const privateKeys = data.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+
+    for (const privateKey of privateKeys) {
+      const wallet = new Wallet(privateKey);
+      accounts.push({
+        walletAddress: wallet.address,
+        privateKey: privateKey
+      });
+    }
+
+    return accounts;
+  } catch (error) {
+    console.error(colors.red(`Lỗi khi đọc file wallet.txt: ${error.message}`));
+    return [];
+  }
 }
 
-let proxies = [];
-if (fs.existsSync('proxy.txt')) {
-    const proxyLines = fs.readFileSync('proxy.txt', 'utf-8')
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line.length > 0);
-
-    proxies = proxyLines.map(proxy => {
-        try {
-            const agent = new HttpsProxyAgent(proxy);
-            return agent;
-        } catch (e) {
-            console.log(colors.red(`Lỗi khi phân tích proxy: ${proxy} - ${e.message}`));
-            return null;
-        }
-    }).filter(proxy => proxy !== null);
+async function readProxies() {
+  try {
+    const data = await fs.promises.readFile('proxy.txt', 'utf-8');
+    return data.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+  } catch (error) {
+    console.error(colors.red(`Lỗi khi đọc file proxy.txt: ${error.message}`));
+    return [];
+  }
 }
 
-let logs = [];
-if (fs.existsSync('log.json')) {
-    logs = JSON.parse(fs.readFileSync('log.json', 'utf-8'));
+function getHeaders(token = null) {
+  const headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
+    'Accept': 'application/json, text/plain, */*',
+    'Content-Type': 'application/json',
+    'Origin': 'https://monadscore.xyz',
+    'Referer': 'https://monadscore.xyz/'
+  };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  return headers;
 }
 
-function getHeaders() {
-    return {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36',
-        'Accept': 'application/json, text/plain, */*',
-        'Content-Type': 'application/json',
-        'origin': 'https://monadscore.xyz',
-        'referer': 'https://monadscore.xyz/'
-    };
+function getAxiosConfig(proxy, token = null) {
+  const config = {
+    headers: getHeaders(token),
+    timeout: 120000
+  };
+  if (proxy) {
+    config.httpsAgent = new HttpsProxyAgent(proxy);
+  }
+  return config;
 }
 
-async function startNode(walletAddress, proxy) {
-    const data = {
-        wallet: walletAddress,
-        startTime: Date.now()
-    };
-
+async function requestWithRetry(method, url, payload = null, config = null, retries = 3, backoff = 2000) {
+  for (let i = 0; i < retries; i++) {
     try {
-        const config = {
-            method: 'put',
-            url: `${BASE_URL}/user/update-start-time`,
-            data,
-            httpAgent: proxy,
-            httpsAgent: proxy,
-            timeout: 15000,
-            headers: getHeaders()
-        };
-
-        const res = await axios(config);
-        return res.data;
+      if (method === 'get') return await axios.get(url, config);
+      if (method === 'post') return await axios.post(url, payload, config);
+      if (method === 'put') return await axios.put(url, payload, config);
+      throw new Error(`Unsupported method: ${method}`);
     } catch (error) {
-        console.log(colors.red(`Lỗi khi cập nhật startTime cho ví ${walletAddress}: ${error.message}`));
-        return null;
+      if (i < retries - 1) {
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        backoff *= 1.5;
+      } else {
+        throw error;
+      }
     }
+  }
 }
 
-function isNodeUpdated(walletAddress) {
-    const today = new Date().toISOString().slice(0, 10);
-    return logs.some(log => log.wallet === walletAddress && log.success && log.timestamp.startsWith(today));
+async function getPublicIP(proxy) {
+  try {
+    const response = await requestWithRetry('get', 'https://api.ipify.org?format=json', null, getAxiosConfig(proxy));
+    return response?.data?.ip || 'IP không tìm thấy';
+  } catch {
+    return 'Lỗi khi lấy IP';
+  }
 }
 
-async function processWallets() {
-    let hasUpdated = false;
+async function getInitialToken(walletAddress, proxy) {
+  const url = `${BASE_URL}/user`;
+  const response = await requestWithRetry('post', url, { wallet: walletAddress, invite: null }, getAxiosConfig(proxy));
+  return response.data.token;
+}
 
-    for (const walletAddress of wallets) {
-        if (isNodeUpdated(walletAddress)) {
-            console.log(colors.yellow(`Node cho ví ${walletAddress} đã được cập nhật hôm nay, bỏ qua.`));
-            continue;
-        }
+async function loginUser(walletAddress, proxy, initialToken) {
+  const url = `${BASE_URL}/user/login`;
+  const response = await requestWithRetry('post', url, { wallet: walletAddress }, getAxiosConfig(proxy, initialToken));
+  return response.data.token;
+}
 
-        const proxy = proxies[Math.floor(Math.random() * proxies.length)];
-        const result = await startNode(walletAddress, proxy);
-        if (result?.success) {
-            console.log(colors.green(`✔️ Cập nhật startTime cho ví ${walletAddress} thành công!`));
+async function updateStartTime(walletAddress, proxy, token) {
+  const url = `${BASE_URL}/user/update-start-time`;
+  const payload = { wallet: walletAddress, startTime: Date.now() };
+  try {
+    const response = await requestWithRetry('put', url, payload, getAxiosConfig(proxy, token));
+    return {
+      message: response.data.message || 'Cập nhật node thành công',
+      totalPoints: response.data.user?.totalPoints ?? 'Chưa xác định'
+    };
+  } catch (error) {
+    return {
+      message: `Cập nhật node thất bại: ${error.response?.data?.message || error.message}`,
+      totalPoints: error.response?.data.user?.totalPoints ?? 'N/A'
+    };
+  }
+}
 
-            logs.push({
-                wallet: walletAddress,
-                success: true,
-                timestamp: new Date().toISOString()
-            });
+async function processAccount(account, index, total, proxy) {
+  const { walletAddress, privateKey } = account;
+  console.log(colors.cyan('='.repeat(80)));
+  console.log(colors.green(`Tài khoản  : ` + `${index + 1}`));
+  console.log(colors.green(`Địa chỉ ví : ` + `${walletAddress}`));
+  const usedIP = await getPublicIP(proxy);
+  console.log(colors.green(`Proxy IP   : ` + `${usedIP}`));
 
-            fs.writeFileSync('log.json', JSON.stringify(logs, null, 2));
-            hasUpdated = true;
-        } else {
-            console.log(colors.red(`❌ Cập nhật startTime cho ví ${walletAddress} thất bại.`));
+  let wallet;
+  try {
+    wallet = new Wallet(privateKey);
+  } catch (error) {
+    console.error(colors.red(`Lỗi tạo ví : ${error.message}`));
+    return;
+  }
 
-            logs.push({
-                wallet: walletAddress,
-                success: false,
-                timestamp: new Date().toISOString()
-            });
+  let loginToken;
+  try {
+    const initialToken = await getInitialToken(walletAddress, proxy);
+    const signMessage = `Request from
 
-            fs.writeFileSync('log.json', JSON.stringify(logs, null, 2));
-            hasUpdated = true;
-        }
+monadscore.xyz
 
-        await new Promise(resolve => setTimeout(resolve, 10000));
+Message
+
+Sign this message to verify ownership and continue to dashboard!
+
+${walletAddress}`;
+    await wallet.signMessage(signMessage);
+    loginToken = await loginUser(walletAddress, proxy, initialToken);
+    console.log(colors.green('Đăng nhập thành công'));
+  } catch (error) {
+    console.error(colors.red(`Lỗi khi đăng nhập: ${error.message}`));
+    return;
+  }
+
+  console.log(colors.yellow('Đang Run Node...'));
+  const { message, totalPoints } = await updateStartTime(walletAddress, proxy, loginToken);
+  if (/successfully|berhasil|thành công/i.test(message)) {
+    console.log(colors.green(`✅ Run Node thành công : ${message}`));
+  } else {
+    console.log(colors.red(`❌ Run Node thất bại : ${message}`));
+  }
+
+  console.log(colors.green(`📌 Tổng Điểm: ${totalPoints}`));
+  await new Promise(resolve => setTimeout(resolve, 10000));
+}
+
+async function run() {
+  const accounts = await readAccounts();
+  const proxies = await readProxies();
+
+  if (accounts.length === 0) {
+    console.log(colors.red('Không tìm thấy PrivateKey nào hợp lệ trong wallet.txt!'));
+    return;
+  }
+
+  for (let i = 0; i < accounts.length; i++) {
+    const proxy = proxies[i % proxies.length] || null;
+    try {
+      await processAccount(accounts[i], i, accounts.length, proxy);
+    } catch (error) {
+      console.error(colors.red(`Lỗi ở tài khoản ${i + 1}: ${error.message}`));
     }
+  }
 
-    return hasUpdated;
+  console.log(colors.magenta('Hoàn thành Run Node cho tất cả tài khoản!'));
 }
 
-async function startNodeDaily() {
-    const now = new Date();
-    const targetTime = new Date(now.setHours(7, 2, 0, 0));
-
-    if (now.getTime() >= targetTime.getTime()) {
-        targetTime.setDate(targetTime.getDate() + 1);
-    }
-
-    const delay = targetTime - Date.now();
-    console.log(colors.cyan(`Chờ đến ${targetTime.toLocaleTimeString()} để bắt đầu lại...`));
-
-    setTimeout(async () => {
-        const hasUpdated = await processWallets();
-
-        if (hasUpdated) {
-            const extraDelay = getRandomDelay() * 60 * 1000;
-            console.log(colors.cyan(`Đợi thêm ${extraDelay / 60000} phút trước khi bắt đầu lại...`));
-
-            setTimeout(startNodeDaily, extraDelay);
-        } else {
-            startNodeDaily();
-        }
-    }, delay);
-}
-
-function getRandomDelay() {
-    return Math.floor(Math.random() * (10 - 2 + 1)) + 2;
-}
-
-async function runOnce() {
-    const hasUpdated = await processWallets();
-
-    if (hasUpdated) {
-        await startNodeDaily();
-    } else {
-        console.log(colors.cyan("Không có ví nào cần xử lý. Đợi đến 7h02 sáng hôm sau..."));
-        await startNodeDaily();
-    }
-}
-
-runOnce();
+run();
