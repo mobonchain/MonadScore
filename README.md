@@ -5,13 +5,13 @@
 
 - [![TopAME | Bullish - Cheerful](https://img.shields.io/badge/TopAME%20|%20Bullish-Cheerful-blue?logo=telegram&style=flat)](https://t.me/xTopAME)
 
-# Hướng Dẫn Cài Đặt Auto Ref - Start Node Dự Án Monad Score
-- **Chức năng:** Bao gồm hỗ trợ người dùng **Ref** cho tài khoản chính, và **kích hoạt Node** hàng ngày cho tài khoản phụ
+# Hướng Dẫn Cài Đặt Auto Start Node Dự Án Monad Score
+- **Chức năng:** Tự động **kích hoạt Node** cho tài khoản
 ---
 
 ## Yêu cầu
 
-- **Proxy** và **Địa chỉ ví EVM**
+- **Proxy** và **PrivateKey**
 - **Cài Node.js nếu chưa có ( Windows ): https://t.me/ToolboxforAirdrop/4**
 
 ---
@@ -29,8 +29,8 @@
    - Mỗi dòng chứa một địa chỉ ví EVM
    - Định dạng:
      ```
-     0xYourWalletAddress1
-     0xYourWalletAddress1
+     0xYourPrivateKey1
+     0xYourPrivateKey2
      ```
 
 ---
@@ -45,7 +45,7 @@
 ### Bước 2: Cấu Hình Proxy, Wallet
 
 1. Mở file `proxy.txt` và nhâp vào danh sách `Proxy` theo cấu trúc dữ liệu phía trên
-2. Mở file `wallet.txt` và nhập vào `Địa chỉ ví` của các ví EVM bạn muốn sử dụng
+2. Mở file `wallet.txt` và nhập vào `Private Key` của các ví EVM bạn sử dụng
 
 ### Bước 3: Cài Đặt Module
 
@@ -57,11 +57,7 @@
 
 ### Bước 4: Chạy Tool
 
-1. Chạy Ref:
-   ```bash
-   node ref.js
-   ```
-2. Tự động Start Node
+1. Tự động Start Node
    ```bash
    node startNode.js
    ```
